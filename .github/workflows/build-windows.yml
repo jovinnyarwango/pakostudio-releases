@@ -1,11 +1,6 @@
 name: Build Windows EXE
 
-# Triggers when you push a tag like v5.1.0-win or v5.2.0-win
-# Or manually from the Actions tab
 on:
-  push:
-    tags:
-      - 'v*-win'
   workflow_dispatch:
     inputs:
       version:
@@ -19,7 +14,6 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      # ── 1. Checkout the source repo ──────────────────────────────────────────
       - name: Checkout PAKOStudio source
         uses: actions/checkout@v4
         with:
@@ -27,13 +21,11 @@ jobs:
           token: ${{ secrets.SOURCE_REPO_TOKEN }}
           path: source
 
-      # ── 2. Set up Python 3.13 ────────────────────────────────────────────────
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
 
-      # ── 3. Install dependencies ──────────────────────────────────────────────
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -41,109 +33,50 @@ jobs:
           pip install opencv-contrib-python Pillow numpy rawpy pyexiftool
           pip install PySide6
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          pip install onnxruntime
-          pip install insightface
-          pip install mediapipe
-          pip install openai-clip
-          pip install piq
-          pip install glasses-detector
-          pip install ultralytics
-          pip install psutil
-          pip install requests
+          pip install onnxruntime insightface mediapipe
+          pip install openai-clip piq glasses-detector ultralytics psutil requests
         shell: cmd
 
-      # ── 4. Download ML models ────────────────────────────────────────────────
       - name: Download ML models
         run: |
           python -c "
-          import urllib.request, os
-
-          # InsightFace buffalo_l models
-          models = {
-              'det_10g.onnx':    'https://github.com/deepinsight/insightface/releases/download/v0.7/det_10g.onnx',
-              'w600k_r50.onnx':  'https://github.com/deepinsight/insightface/releases/download/v0.7/w600k_r50.onnx',
-              'genderage.onnx':  'https://github.com/deepinsight/insightface/releases/download/v0.7/genderage.onnx',
-              '2d106det.onnx':   'https://github.com/deepinsight/insightface/releases/download/v0.7/2d106det.onnx',
-          }
+          import urllib.request, os, sys
           os.makedirs(os.path.expanduser('~/.insightface/models/buffalo_l'), exist_ok=True)
-          for name, url in models.items():
-              dest = os.path.expanduser(f'~/.insightface/models/buffalo_l/{name}')
-              if not os.path.exists(dest):
-                  print(f'Downloading {name}...')
-                  try:
-                      urllib.request.urlretrieve(url, dest)
-                      print(f'  done')
-                  except Exception as e:
-                      print(f'  failed: {e}')
-
-          # CLIP ViT-B/32
           import clip
           clip.load('ViT-B/32', device='cpu')
-          print('CLIP downloaded')
-
-          # YOLOv8n
           from ultralytics import YOLO
           YOLO('yolov8n.pt')
-          print('YOLOv8n downloaded')
-
-          # MediaPipe face landmarker
           url = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'
           urllib.request.urlretrieve(url, 'face_landmarker.task')
-          print('MediaPipe model downloaded')
+          print('Models ready')
           "
         shell: cmd
         working-directory: source
 
-      # ── 5. Copy app files to source directory ────────────────────────────────
-      - name: Prepare build files
-        run: |
-          copy pako_app.py source\
-          copy pako_engine.py source\
-          copy pako_face_worker.py source\
-          copy pako_phase1_runner.py source\
-          copy QuickChoiceDialog.py source\
-          copy PAKOStudio.spec source\
-          copy face_detection_yunet_2023mar.onnx source\
-          copy face_recognition_sface_2021dec.onnx source\
-          copy aesthetic_head.pth source\
-          copy blaze_face_short_range.task source\
-          copy keys.json source\
-        shell: cmd
-        continue-on-error: true
-
-      # ── 6. Build with PyInstaller ─────────────────────────────────────────────
       - name: Build EXE with PyInstaller
         run: |
           pyinstaller PAKOStudio.spec --clean --noconfirm
         shell: cmd
         working-directory: source
 
-      # ── 7. Create ZIP installer ──────────────────────────────────────────────
       - name: Package as ZIP
         run: |
-          $version = "${{ github.event.inputs.version || '5.1.0' }}"
+          $version = "${{ github.event.inputs.version }}"
           Compress-Archive -Path "source\dist\PAKOStudio\*" -DestinationPath "PAKOStudio-${version}-windows-x64.zip"
         shell: powershell
 
-      # ── 8. Upload to GitHub Release ──────────────────────────────────────────
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
           files: PAKOStudio-*.zip
-          tag_name: ${{ github.ref_name || format('v{0}-win', github.event.inputs.version) }}
-          name: PAKOStudio ${{ github.event.inputs.version || '5.1.0' }} (Windows)
+          tag_name: v${{ github.event.inputs.version }}-win
+          name: PAKOStudio ${{ github.event.inputs.version }} (Windows)
           body: |
-            ## PAKOStudio Windows Build
-
-            **Platform:** Windows 10/11 x64
-            **Python:** 3.13
-
-            ### Installation
-            1. Download and extract the ZIP
-            2. Run `PAKOStudio.exe` inside the extracted folder
-            3. Register at https://pakostudio-web.vercel.app/register
-
-            > ⚠️ Windows may show a SmartScreen warning — click "More info" → "Run anyway"
+            Windows build of PAKOStudio ${{ github.event.inputs.version }}
+            
+            - Extract the ZIP and run PAKOStudio.exe
+            - Register at https://pakostudio-web.vercel.app/register
+            - Windows SmartScreen warning: click More info → Run anyway
           draft: false
           prerelease: true
         env:
