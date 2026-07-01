@@ -8,6 +8,9 @@ on:
         required: true
         default: '5.1.0'
 
+permissions:
+  contents: write
+
 jobs:
   build-windows:
     runs-on: windows-latest
