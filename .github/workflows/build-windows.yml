@@ -38,32 +38,51 @@ jobs:
         shell: cmd
 
       - name: Download ML models
+        shell: python
         run: |
-          python -c "
-          import urllib.request, os, sys
-          os.makedirs(os.path.expanduser('~/.insightface/models/buffalo_l'), exist_ok=True)
+          import urllib.request
+          import os
+          import sys
+
+          # InsightFace models directory
+          insightface_dir = os.path.expanduser('~/.insightface/models/buffalo_l')
+          os.makedirs(insightface_dir, exist_ok=True)
+
+          # CLIP ViT-B/32
           import clip
           clip.load('ViT-B/32', device='cpu')
+          print('CLIP ready')
+
+          # YOLOv8n
           from ultralytics import YOLO
-          YOLO('yolov8n.pt')
+          model = YOLO('yolov8n.pt')
+          print('YOLOv8n ready')
+
+          # MediaPipe face landmarker
           url = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'
-          urllib.request.urlretrieve(url, 'face_landmarker.task')
-          print('Models ready')
-          "
-        shell: cmd
-        working-directory: source
+          dest = os.path.join('source', 'face_landmarker.task')
+          urllib.request.urlretrieve(url, dest)
+          print('MediaPipe model ready')
+
+          # Copy yolov8n.pt to source folder
+          import shutil
+          yolo_src = 'yolov8n.pt'
+          if os.path.exists(yolo_src):
+              shutil.copy(yolo_src, os.path.join('source', 'yolov8n.pt'))
+              print('yolov8n.pt copied to source')
+
+          print('All models ready')
 
       - name: Build EXE with PyInstaller
-        run: |
-          pyinstaller PAKOStudio.spec --clean --noconfirm
+        run: pyinstaller PAKOStudio.spec --clean --noconfirm
         shell: cmd
         working-directory: source
 
       - name: Package as ZIP
+        shell: powershell
         run: |
           $version = "${{ github.event.inputs.version }}"
           Compress-Archive -Path "source\dist\PAKOStudio\*" -DestinationPath "PAKOStudio-${version}-windows-x64.zip"
-        shell: powershell
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
@@ -73,10 +92,10 @@ jobs:
           name: PAKOStudio ${{ github.event.inputs.version }} (Windows)
           body: |
             Windows build of PAKOStudio ${{ github.event.inputs.version }}
-            
+
             - Extract the ZIP and run PAKOStudio.exe
             - Register at https://pakostudio-web.vercel.app/register
-            - Windows SmartScreen warning: click More info → Run anyway
+            - Windows SmartScreen warning: click More info then Run anyway
           draft: false
           prerelease: true
         env:
