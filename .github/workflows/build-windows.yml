@@ -40,40 +40,85 @@ jobs:
           pip install git+https://github.com/openai/CLIP.git piq glasses-detector ultralytics psutil requests
         shell: cmd
 
+      # Provisions EVERY model the spec bundles, so the Windows build
+      # matches the macOS build and users never download models at runtime.
+      # Each section ASSERTS success — a build with missing models fails
+      # loudly here instead of shipping a silently broken ZIP.
       - name: Download ML models
         shell: python
         run: |
-          import urllib.request
-          import os
-          import sys
+          import urllib.request, zipfile, os, shutil
 
-          # InsightFace models directory
+          # ── InsightFace buffalo_l (341MB) ───────────────────────────────
+          # The old step only created an empty folder; the spec found no
+          # .onnx files and bundled nothing, so every Windows user
+          # downloaded these at first analysis.
           insightface_dir = os.path.expanduser('~/.insightface/models/buffalo_l')
           os.makedirs(insightface_dir, exist_ok=True)
+          url = ('https://github.com/deepinsight/insightface/releases/'
+                 'download/v0.7/buffalo_l.zip')
+          zip_path = 'buffalo_l.zip'
+          print('Downloading buffalo_l...')
+          urllib.request.urlretrieve(url, zip_path)
+          with zipfile.ZipFile(zip_path) as z:
+              # Zip may contain a buffalo_l/ folder or bare files —
+              # flatten every .onnx directly into the target dir.
+              for member in z.namelist():
+                  if member.endswith('.onnx'):
+                      target = os.path.join(insightface_dir,
+                                            os.path.basename(member))
+                      with z.open(member) as src, open(target, 'wb') as dst:
+                          shutil.copyfileobj(src, dst)
+                      print(f'  extracted {os.path.basename(member)}')
+          onnx_count = len([f for f in os.listdir(insightface_dir)
+                            if f.endswith('.onnx')])
+          print(f'InsightFace ready — {onnx_count} onnx files')
+          assert onnx_count >= 5, 'buffalo_l incomplete!'
 
-          # CLIP ViT-B/32
+          # ── CLIP ViT-B/32 (354MB) — downloads into ~/.cache/clip ───────
           import clip
           clip.load('ViT-B/32', device='cpu')
+          clip_dir = os.path.expanduser('~/.cache/clip')
+          assert any(f.endswith('.pt') for f in os.listdir(clip_dir)), \
+              'CLIP cache empty!'
           print('CLIP ready')
 
-          # YOLOv8n
+          # ── YOLOv8n (6MB) ───────────────────────────────────────────────
           from ultralytics import YOLO
-          model = YOLO('yolov8n.pt')
+          YOLO('yolov8n.pt')
+          if os.path.exists('yolov8n.pt'):
+              shutil.copy('yolov8n.pt', os.path.join('source', 'yolov8n.pt'))
+          assert os.path.exists(os.path.join('source', 'yolov8n.pt')), \
+              'yolov8n.pt missing from source!'
           print('YOLOv8n ready')
 
-          # MediaPipe face landmarker
-          url = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'
-          dest = os.path.join('source', 'face_landmarker.task')
-          urllib.request.urlretrieve(url, dest)
-          print('MediaPipe model ready')
+          # ── MediaPipe face landmarker (3.7MB) ───────────────────────────
+          url = ('https://storage.googleapis.com/mediapipe-models/'
+                 'face_landmarker/face_landmarker/float16/1/'
+                 'face_landmarker.task')
+          urllib.request.urlretrieve(
+              url, os.path.join('source', 'face_landmarker.task'))
+          print('MediaPipe face_landmarker ready')
 
-          # Copy yolov8n.pt to source folder
-          import shutil
-          yolo_src = 'yolov8n.pt'
-          if os.path.exists(yolo_src):
-              shutil.copy(yolo_src, os.path.join('source', 'yolov8n.pt'))
-              print('yolov8n.pt copied to source')
-
+          # ── Verify repo-committed model files are present ───────────────
+          # These small files are COMMITTED to pakostudio-web:
+          #   aesthetic_head.pth, blaze_face_short_range.task,
+          #   face_detection_yunet_2023mar.onnx,
+          #   face_recognition_sface_2021dec.onnx, config.json
+          # The spec silently skips missing files — fail loudly instead.
+          required = [
+              'aesthetic_head.pth',
+              'blaze_face_short_range.task',
+              'face_detection_yunet_2023mar.onnx',
+              'face_recognition_sface_2021dec.onnx',
+              'config.json',
+          ]
+          missing = [f for f in required
+                     if not os.path.exists(os.path.join('source', f))]
+          if missing:
+              raise SystemExit(
+                  f'MISSING from pakostudio-web repo: {missing} — '
+                  f'commit these files, the build would silently omit them.')
           print('All models ready')
 
       - name: Build EXE with PyInstaller
