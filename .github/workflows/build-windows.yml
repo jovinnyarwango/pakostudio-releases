@@ -1,3 +1,5 @@
+# Reference copy. Lives and RUNS in jovinnyarwango/pakostudio-releases (Actions tab),
+# so the release it creates lands there. Paste updates there when this changes.
 name: Build Windows EXE
 
 on:
@@ -17,10 +19,10 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - name: Checkout PAKOStudio source
+      - name: Checkout PAKOStudio source (desktop app repo)
         uses: actions/checkout@v4
         with:
-          repository: jovinnyarwango/pakostudio-web
+          repository: jovinnyarwango/pakostudio
           token: ${{ secrets.SOURCE_REPO_TOKEN }}
           path: source
 
@@ -117,7 +119,7 @@ jobs:
                      if not os.path.exists(os.path.join('source', f))]
           if missing:
               raise SystemExit(
-                  f'MISSING from pakostudio-web repo: {missing} — '
+                  f'MISSING from pakostudio repo: {missing} — '
                   f'commit these files, the build would silently omit them.')
           print('All models ready')
 
@@ -136,8 +138,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: PAKOStudio-*.zip
-          tag_name: v${{ github.event.inputs.version }}-win
-          name: PAKOStudio ${{ github.event.inputs.version }} (Windows)
+          tag_name: v${{ github.event.inputs.version }}
+          name: PAKOStudio ${{ github.event.inputs.version }}
           body: |
             Windows build of PAKOStudio ${{ github.event.inputs.version }}
 
@@ -145,6 +147,6 @@ jobs:
             - Register at https://pakostudio-web.vercel.app/register
             - Windows SmartScreen warning: click More info then Run anyway
           draft: false
-          prerelease: true
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
