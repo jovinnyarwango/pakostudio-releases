@@ -6,9 +6,13 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version string (e.g. 5.1.0)'
-        required: true
-        default: '5.1.0'
+        description: 'Version (leave empty to use APP_VERSION from pako_app.py)'
+        required: false
+        default: ''
+      ref:
+        description: 'Branch or tag of the pakostudio repo to build (empty = its default branch)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -23,6 +27,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: jovinnyarwango/pakostudio
+          ref: ${{ github.event.inputs.ref }}
           token: ${{ secrets.SOURCE_REPO_TOKEN }}
           path: source
 
@@ -46,6 +51,28 @@ jobs:
       # matches the macOS build and users never download models at runtime.
       # Each section ASSERTS success — a build with missing models fails
       # loudly here instead of shipping a silently broken ZIP.
+      - name: Work out the version
+        id: ver
+        shell: powershell
+        run: |
+          $v = "${{ github.event.inputs.version }}"
+          if (-not $v) {
+            $m = Select-String -Path "source\pako_app.py" -Pattern '^APP_VERSION\s*=\s*"([^"]+)"' | Select-Object -First 1
+            $v = $m.Matches[0].Groups[1].Value
+          }
+          if (-not $v) { throw "Could not find the version" }
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Building PAKOStudio $v"
+
+      - name: Check the code for undefined names
+        shell: bash
+        working-directory: source
+        run: |
+          pip install pyflakes
+          if python -m pyflakes pako_app.py pako_engine.py pako_auth.py pako_face_worker.py pako_presets.py | grep -i "undefined name"; then
+            echo "Undefined names found. Fix them before building."; exit 1
+          fi
+
       - name: Download ML models
         shell: python
         run: |
@@ -131,21 +158,14 @@ jobs:
       - name: Package as ZIP
         shell: powershell
         run: |
-          $version = "${{ github.event.inputs.version }}"
+          $version = "${{ steps.ver.outputs.version }}"
           Compress-Archive -Path "source\dist\PAKOStudio\*" -DestinationPath "PAKOStudio-${version}-windows-x64.zip"
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
           files: PAKOStudio-*.zip
-          tag_name: v${{ github.event.inputs.version }}
-          name: PAKOStudio ${{ github.event.inputs.version }}
-          body: |
-            Windows build of PAKOStudio ${{ github.event.inputs.version }}
-
-            - Extract the ZIP and run PAKOStudio.exe
-            - Register at https://pakostudio-web.vercel.app/register
-            - Windows SmartScreen warning: click More info then Run anyway
+          tag_name: v${{ steps.ver.outputs.version }}
           draft: false
           prerelease: false
         env:
